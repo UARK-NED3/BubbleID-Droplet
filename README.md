@@ -43,19 +43,35 @@ Windows this is often easiest in a Python 3.10 or 3.11 environment.
 
 ## Run BubbleID Tiled Inference
 
+For dense droplet images, start with BubbleID's one-class segmentation checkpoint
+(`model_1class.pth`, described in the original BubbleID release as the large-bubble
+segmentation model). The CLI infers the Detectron2 foreground class count from the
+checkpoint, so `--num-classes` is only needed for debugging or unusual checkpoints.
+
 ```powershell
 python -m bubbleid_droplet.cli predict `
   --backend detectron2 `
-  --weights C:\path\to\bubbleid_model.pth `
+  --weights C:\path\to\model_1class.pth `
   --image C:\Users\hanhu\Downloads\Adera_Lab_Droplet.tif `
   --output-dir outputs\adera `
   --stitch-mode legacy-grid `
-  --num-classes 2 `
   --min-size-test 800 `
   --max-size-test 1333 `
   --detections-per-image 3000 `
+  --max-mask-area-fraction 0.20 `
+  --large-mask-area-fraction 0.06 `
+  --large-mask-min-circularity 0.35 `
   --score-threshold 0.10
 ```
+
+For images where large masks incorrectly group many small droplets, tighten the mask
+quality gates, for example `--max-mask-area-fraction 0.12` or
+`--large-mask-min-circularity 0.50`. These filters reject large, non-circular tile masks
+before the binary mask union and watershed split.
+
+The two-class `model_final.pth` checkpoint also runs, but on dense condensation images it
+can produce more large merged masks. Use it for comparison rather than as the first
+droplet baseline.
 
 For a faster, instance-preserving experimental mode:
 
@@ -100,7 +116,7 @@ dense droplet scenes.
 ```powershell
 python -m bubbleid_droplet.cli evaluate-wsp `
   --backend detectron2 `
-  --weights C:\path\to\bubbleid_model.pth `
+  --weights C:\path\to\model_1class.pth `
   --download-dir data\wsp `
   --output-dir outputs\wsp `
   --limit 25

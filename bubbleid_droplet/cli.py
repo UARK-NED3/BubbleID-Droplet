@@ -45,6 +45,10 @@ def main() -> None:
             iou_threshold=args.iou_threshold,
             stitch_mode=args.stitch_mode,
             edge_margin=args.edge_margin,
+            class_ids=parse_class_ids(args.class_ids),
+            max_mask_area_fraction=args.max_mask_area_fraction,
+            large_mask_area_fraction=args.large_mask_area_fraction,
+            large_mask_min_circularity=args.large_mask_min_circularity,
         )
         print(json.dumps(asdict(summary), indent=2, default=str))
         return
@@ -71,12 +75,26 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min-size-test", type=int, default=800)
     parser.add_argument("--max-size-test", type=int, default=1333)
     parser.add_argument("--detections-per-image", type=int, default=3000)
-    parser.add_argument("--num-classes", type=int, default=2)
+    parser.add_argument(
+        "--num-classes",
+        type=int,
+        help="Detectron2 foreground class count. Omit to infer it from the checkpoint.",
+    )
     parser.add_argument("--edge-margin", type=int, default=10)
+    parser.add_argument("--class-ids", help="Comma-separated Detectron2 class ids to keep")
+    parser.add_argument("--max-mask-area-fraction", type=float, default=0.20)
+    parser.add_argument("--large-mask-area-fraction", type=float, default=0.06)
+    parser.add_argument("--large-mask-min-circularity", type=float, default=0.35)
     parser.add_argument("--tile-size", type=int, default=512)
     parser.add_argument("--overlap", type=int, default=128)
     parser.add_argument("--iou-threshold", type=float, default=0.30)
     parser.add_argument("--min-area", type=int, default=8)
+
+
+def parse_class_ids(value: str | None) -> set[int] | None:
+    if not value:
+        return None
+    return {int(part.strip()) for part in value.split(",") if part.strip()}
 
 
 if __name__ == "__main__":

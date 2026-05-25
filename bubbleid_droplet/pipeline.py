@@ -50,6 +50,10 @@ def run_image(
     iou_threshold: float = 0.30,
     stitch_mode: str = "instance-nms",
     edge_margin: int = 10,
+    class_ids: set[int] | None = None,
+    max_mask_area_fraction: float = 0.20,
+    large_mask_area_fraction: float = 0.06,
+    large_mask_min_circularity: float = 0.35,
 ) -> RunSummary:
     image_path = Path(image_path)
     output_dir = Path(output_dir)
@@ -58,7 +62,15 @@ def run_image(
     h, w = image.shape[:2]
 
     if stitch_mode == "legacy-grid":
-        binary_mask = legacy_grid_mask(image, predictor, edge_margin=edge_margin)
+        binary_mask = legacy_grid_mask(
+            image,
+            predictor,
+            edge_margin=edge_margin,
+            class_ids=class_ids,
+            max_mask_area_fraction=max_mask_area_fraction,
+            large_mask_area_fraction=large_mask_area_fraction,
+            large_mask_min_circularity=large_mask_min_circularity,
+        )
         label_mask = split_touching_droplets(binary_mask)
     elif stitch_mode == "instance-nms":
         predictions: list[Prediction] = []
@@ -99,7 +111,15 @@ def run_image(
     )
 
 
-def legacy_grid_mask(image: np.ndarray, predictor, edge_margin: int = 10) -> np.ndarray:
+def legacy_grid_mask(
+    image: np.ndarray,
+    predictor,
+    edge_margin: int = 10,
+    class_ids: set[int] | None = None,
+    max_mask_area_fraction: float = 0.20,
+    large_mask_area_fraction: float = 0.06,
+    large_mask_min_circularity: float = 0.35,
+) -> np.ndarray:
     """Reproduce the original BubbleID-Droplet shifted-grid binary stitching."""
 
     h, w = image.shape[:2]
@@ -122,18 +142,32 @@ def legacy_grid_mask(image: np.ndarray, predictor, edge_margin: int = 10) -> np.
                             predictor(crop),
                             shape=(crop_h, crop_w),
                             edge_margin=edge_margin,
+                            class_ids=class_ids,
+                            max_mask_area_fraction=max_mask_area_fraction,
+                            large_mask_area_fraction=large_mask_area_fraction,
+                            large_mask_min_circularity=large_mask_min_circularity,
                         )
                         full_mask[y0:y1, x0:x1] |= crop_mask
     return full_mask
 
 
 def combine_interior_predictions(
-    predictions: list[Prediction], shape: tuple[int, int], edge_margin: int
+    predictions: list[Prediction],
+    shape: tuple[int, int],
+    edge_margin: int,
+    class_ids: set[int] | None = None,
+    max_mask_area_fraction: float = 0.20,
+    large_mask_area_fraction: float = 0.06,
+    large_mask_min_circularity: float = 0.35,
 ) -> np.ndarray:
     crop_h, crop_w = shape
     combined = np.zeros(shape, dtype=bool)
-    max_area = (crop_h * crop_w) // 3
+    crop_area = crop_h * crop_w
+    max_area = crop_area * max_mask_area_fraction
+    large_area = crop_area * large_mask_area_fraction
     for pred in predictions:
+        if class_ids is not None and pred.class_id not in class_ids:
+            continue
         x0, y0, x1, y1 = pred.bbox
         if (
             x0 < edge_margin
@@ -142,10 +176,25 @@ def combine_interior_predictions(
             or y1 > crop_h - edge_margin
         ):
             continue
-        if int(np.count_nonzero(pred.mask)) >= max_area:
+        area = int(np.count_nonzero(pred.mask))
+        if area >= max_area:
+            continue
+        if area >= large_area and mask_circularity(pred.mask) < large_mask_min_circularity:
             continue
         combined |= pred.mask.astype(bool)
     return combined
+
+
+def mask_circularity(mask: np.ndarray) -> float:
+    contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contour_list = contours[0] if len(contours) == 2 else contours[1]
+    if not contour_list:
+        return 0.0
+    area = float(np.count_nonzero(mask))
+    perimeter = sum(cv2.arcLength(contour, True) for contour in contour_list)
+    if perimeter <= 0:
+        return 0.0
+    return float((4.0 * np.pi * area) / (perimeter * perimeter))
 
 
 def split_touching_droplets(binary_mask: np.ndarray) -> np.ndarray:

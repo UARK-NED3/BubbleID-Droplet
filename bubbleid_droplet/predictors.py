@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import warnings
 
 import cv2
 import numpy as np
+import torch
 
 
 @dataclass
@@ -12,6 +14,7 @@ class Prediction:
     mask: np.ndarray
     score: float
     bbox: tuple[int, int, int, int]
+    class_id: int | None = None
 
 
 class ClassicalDropletPredictor:
@@ -44,9 +47,7 @@ class ClassicalDropletPredictor:
             y = int(stats[label, cv2.CC_STAT_TOP])
             w = int(stats[label, cv2.CC_STAT_WIDTH])
             h = int(stats[label, cv2.CC_STAT_HEIGHT])
-            predictions.append(
-                Prediction(mask=labels == label, score=0.5, bbox=(x, y, x + w, y + h))
-            )
+            predictions.append(Prediction(mask=labels == label, score=0.5, bbox=(x, y, x + w, y + h)))
         return predictions
 
 
@@ -59,7 +60,7 @@ class Detectron2BubbleIDPredictor:
         min_size_test: int = 800,
         max_size_test: int = 1333,
         detections_per_image: int = 3000,
-        num_classes: int = 1,
+        num_classes: int | None = None,
     ) -> None:
         try:
             from detectron2 import model_zoo
@@ -70,6 +71,10 @@ class Detectron2BubbleIDPredictor:
                 "Detectron2 is required for the BubbleID model backend. "
                 "Install the project in a Python environment with torch and detectron2."
             ) from exc
+
+        weights = Path(weights)
+        if num_classes is None:
+            num_classes = infer_detectron2_num_classes(weights)
 
         cfg = get_cfg()
         cfg.merge_from_file(
@@ -94,8 +99,41 @@ class Detectron2BubbleIDPredictor:
         masks = instances.pred_masks.numpy().astype(bool)
         scores = instances.scores.numpy() if instances.has("scores") else np.ones(len(masks))
         boxes = instances.pred_boxes.tensor.numpy().astype(int)
+        classes = (
+            instances.pred_classes.numpy().astype(int)
+            if instances.has("pred_classes")
+            else np.full(len(masks), -1, dtype=int)
+        )
 
         predictions: list[Prediction] = []
-        for mask, score, box in zip(masks, scores, boxes):
-            predictions.append(Prediction(mask=mask, score=float(score), bbox=tuple(box.tolist())))
+        for mask, score, box, class_id in zip(masks, scores, boxes, classes):
+            predictions.append(
+                Prediction(
+                    mask=mask,
+                    score=float(score),
+                    bbox=tuple(box.tolist()),
+                    class_id=int(class_id) if class_id >= 0 else None,
+                )
+            )
         return predictions
+
+
+def infer_detectron2_num_classes(weights: str | Path) -> int:
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="You are using `torch.load`")
+        checkpoint = torch.load(weights, map_location="cpu")
+    model = checkpoint.get("model", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+    if not isinstance(model, dict):
+        raise ValueError(f"Could not infer Detectron2 class count from weights: {weights}")
+
+    for key in (
+        "roi_heads.mask_head.predictor.weight",
+        "roi_heads.box_predictor.cls_score.weight",
+    ):
+        tensor = model.get(key)
+        if tensor is None:
+            continue
+        if key.endswith("mask_head.predictor.weight"):
+            return int(tensor.shape[0])
+        return int(tensor.shape[0] - 1)
+    raise ValueError(f"Could not find Detectron2 ROI head tensors in weights: {weights}")
