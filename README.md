@@ -6,13 +6,18 @@
 
 BubbleID-Droplet adapts the original [BubbleID](https://github.com/cldunlap73/BubbleID)
 Mask R-CNN model for dense droplet segmentation. The key change is tiled inference:
-large droplet images are split into overlapping tiles, the BubbleID Detectron2 model is
-run on each tile, predictions are mapped back into full-image coordinates, duplicate
-masks are merged with mask IoU NMS, and droplet diameters are exported from the final
-instance mask.
+large droplet images are split into tiles, the BubbleID Detectron2 model is run on each
+tile, predictions are mapped back into full-image coordinates, and droplet diameters are
+exported from the final mask.
 
-This is more maintainable than manually coding many shifted crop passes in a notebook
-and preserves instance-level masks until the final merge step.
+Two stitching modes are available:
+
+- `legacy-grid`: reproduces the original BubbleID-Droplet notebook strategy with eight
+  shifted grid passes, edge-touching detections removed, binary mask union, and watershed
+  splitting. This is the recommended mode for matching the published droplet examples.
+- `instance-nms`: a cleaner single-pass overlapping tile mode that preserves model
+  instances and merges duplicates with mask IoU NMS. It is easier to reason about, but
+  may under-detect dense condensation images compared with the legacy grid.
 
 ## Why Tiling Is Needed
 
@@ -44,6 +49,23 @@ python -m bubbleid_droplet.cli predict `
   --weights C:\path\to\bubbleid_model.pth `
   --image C:\Users\hanhu\Downloads\Adera_Lab_Droplet.tif `
   --output-dir outputs\adera `
+  --stitch-mode legacy-grid `
+  --num-classes 2 `
+  --min-size-test 800 `
+  --max-size-test 1333 `
+  --detections-per-image 3000 `
+  --score-threshold 0.10
+```
+
+For a faster, instance-preserving experimental mode:
+
+```powershell
+python -m bubbleid_droplet.cli predict `
+  --backend detectron2 `
+  --weights C:\path\to\bubbleid_model.pth `
+  --image C:\Users\hanhu\Downloads\Adera_Lab_Droplet.tif `
+  --output-dir outputs\adera_instance_nms `
+  --stitch-mode instance-nms `
   --tile-size 512 `
   --overlap 128 `
   --detections-per-image 3000 `

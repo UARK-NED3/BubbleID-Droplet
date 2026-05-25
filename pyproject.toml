@@ -23,3 +23,6 @@ detectron2 = [
 
 [project.scripts]
 bubbleid-droplet = "bubbleid_droplet.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["bubbleid_droplet*"]

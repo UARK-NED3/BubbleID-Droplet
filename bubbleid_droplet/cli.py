@@ -17,6 +17,12 @@ def main() -> None:
     add_common_args(predict)
     predict.add_argument("--image", required=True)
     predict.add_argument("--output-dir", required=True)
+    predict.add_argument(
+        "--stitch-mode",
+        choices=["instance-nms", "legacy-grid"],
+        default="instance-nms",
+        help="Use instance NMS tiling or the original BubbleID-Droplet shifted-grid mask stitching.",
+    )
 
     wsp = subparsers.add_parser("evaluate-wsp", help="Run a subset of the Zenodo WSP dataset")
     add_common_args(wsp)
@@ -37,6 +43,8 @@ def main() -> None:
             tile_size=args.tile_size,
             overlap=args.overlap,
             iou_threshold=args.iou_threshold,
+            stitch_mode=args.stitch_mode,
+            edge_margin=args.edge_margin,
         )
         print(json.dumps(asdict(summary), indent=2, default=str))
         return
@@ -63,6 +71,8 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min-size-test", type=int, default=800)
     parser.add_argument("--max-size-test", type=int, default=1333)
     parser.add_argument("--detections-per-image", type=int, default=3000)
+    parser.add_argument("--num-classes", type=int, default=2)
+    parser.add_argument("--edge-margin", type=int, default=10)
     parser.add_argument("--tile-size", type=int, default=512)
     parser.add_argument("--overlap", type=int, default=128)
     parser.add_argument("--iou-threshold", type=float, default=0.30)
