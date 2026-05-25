@@ -1,0 +1,7 @@
+numpy
+opencv-python
+scikit-image
+tifffile
+
+# Install torch and detectron2 separately for your CUDA/Python platform.
+# Detectron2 is not published as a universal Windows/Python wheel.
