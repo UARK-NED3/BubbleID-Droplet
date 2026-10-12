@@ -4,6 +4,9 @@
 
 # BubbleID-Droplet
 
+Repository scope, evidence, and reuse boundaries are also available in the
+[NED3 resource manifest](.ned3/resource-manifest-v0.1.json).
+
 BubbleID-Droplet adapts the original [BubbleID](https://github.com/cldunlap73/BubbleID)
 Mask R-CNN model for dense droplet segmentation. The key change is tiled inference:
 large droplet images are split into tiles, the BubbleID Detectron2 model is run on each
